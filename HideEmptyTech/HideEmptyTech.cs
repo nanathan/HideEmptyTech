@@ -10,34 +10,88 @@ namespace HideEmptyTech
     [KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public class HideEmptyTechAddon : MonoBehaviour
     {
+        private State state = State.PATHS_TO_PARTS;
+        private RDTechTree techTree;
+        
+        public enum State
+        {
+            // Only show nodes that have parts (can leave un-reachable nodes)
+            WITH_PARTS_ONLY,
+            // Show nodes with parts, and also make sure those nodes are reachable
+            PATHS_TO_PARTS,
+            // Show all nodes
+            ALL
+        }
+
         public void Awake()
         {
-            Debug.Log("Awake");
+            Log.log("Awake");
             RDTechTree.OnTechTreeSpawn.Add(new EventData<RDTechTree>.OnEvent(onTechTreeSpawn));
+            RDTechTree.OnTechTreeDespawn.Add(new EventData<RDTechTree>.OnEvent(onTechTreeDespawn));
         }
 
         public void Start()
         {
-            Debug.Log("Start()");
+            Log.log("Start()");
             DontDestroyOnLoad(this);
+        }
+
+        public void OnGUI()
+        {
+            if(techTree != null)
+            {
+                string title = state == State.WITH_PARTS_ONLY ? "filtered" : state == State.PATHS_TO_PARTS ? "default" : "all";
+                if(GUI.Button(new Rect(50, 50, 90, 30), title))
+                {
+                    switch(state)
+                    {
+                        case State.WITH_PARTS_ONLY:
+                            setState(State.PATHS_TO_PARTS);
+                            break;
+                        case State.PATHS_TO_PARTS:
+                            setState(State.ALL);
+                            break;
+                        case State.ALL:
+                            setState(State.WITH_PARTS_ONLY);
+                            break;
+                    }
+                }
+            }
         }
 
         public void onTechTreeSpawn(RDTechTree techTree)
         {
-            if(techTree != null)
-            {
-                hideNodes(techTree);
-            }
+            this.techTree = techTree;
+            updateVisibility();
         }
 
-        public void hideNodes(RDTechTree techTree)
+        public void onTechTreeDespawn(RDTechTree techTree)
         {
+            this.techTree = null;
+        }
+
+        public void setState(State state)
+        {
+            Log.log("setState " + state);
+            this.state = state;
+            techTree.SpawnTechTreeNodes();
+        }
+
+        void updateVisibility()
+        {
+            Log.log("updateVisibility");
             TechTreeWrapper tree = new TechTreeWrapper(techTree);
 
             tree.visit(node => {
-                Debug.Log("Node " + node.name + " " + node.PartsInTotal());
-                node.gameObject.SetActive(node.PartsInTotal() > 0);
+                Log.log("Node " + node.name + " " + node.PartsInTotal() + " " + ResearchAndDevelopment.GetTechnologyState(node.tech.techID).ToString());
+                bool purchased = ResearchAndDevelopment.GetTechnologyState(node.tech.techID) == RDTech.State.Available;
+                node.gameObject.SetActive(state == State.ALL || purchased || node.PartsInTotal() > 0);
             });
+
+            if(state != State.PATHS_TO_PARTS)
+            {
+                return;
+            }
 
             int testingLoopCount = 0;
             int progress;
@@ -115,6 +169,16 @@ namespace HideEmptyTech
                 allChildren.Add(parent, children = new HashSet<string>());
             }
             children.Add(child);
+        }
+    }
+
+    public class Log
+    {
+        public static void log(object message)
+        {
+#if DEBUG
+            Debug.Log(message);
+#endif
         }
     }
 }
